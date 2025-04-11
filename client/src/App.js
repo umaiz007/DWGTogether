@@ -7,6 +7,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import ACCDashboard from './components/ACCDashboard';
 import TestViewer from './components/TestViewer';
+import AuthCallback from './components/AuthCallback';
 import './App.css';
 
 function Navigation() {
@@ -60,6 +61,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/acc" element={<ACCDashboard />} />
             <Route path="/test" element={<TestViewer />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
         </Container>
       </Router>

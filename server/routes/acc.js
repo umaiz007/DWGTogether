@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const ACCService = require('../services/acc');
-const forgeService = require('../services/forge');
-const auth = require('../middleware/auth');
+const forgeService = require('../services/forgeService');
+const jwt = require('jsonwebtoken');
 
 // Middleware to create ACC service instance
 router.use((req, res, next) => {
@@ -12,6 +12,34 @@ router.use((req, res, next) => {
     req.accService = new ACCService(req.session.accessToken);
     next();
 });
+
+// Middleware to extract and verify the JWT token
+const auth = (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ error: 'No authorization header' });
+        }
+
+        const token = authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'No token provided' });
+        }
+
+        // Verify and decode the JWT
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (!decoded || !decoded.access_token) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+
+        // Add the Forge access token to the request
+        req.forgeToken = decoded.access_token;
+        next();
+    } catch (error) {
+        console.error('Auth middleware error:', error);
+        res.status(401).json({ error: 'Invalid token' });
+    }
+};
 
 // Mock data for ACC projects
 const mockProjects = [
@@ -80,24 +108,36 @@ const mockFiles = {
 
 // Get all ACC projects
 router.get('/projects', auth, async (req, res) => {
-  try {
-    const projects = await forgeService.getProjects();
-    res.json(projects);
-  } catch (error) {
-    console.error('Error in /projects route:', error);
-    res.status(500).json({ error: 'Failed to fetch ACC projects' });
-  }
+    try {
+        console.log('Fetching projects with token:', req.forgeToken);
+        const projects = await forgeService.getProjects(req.forgeToken);
+        console.log('Successfully retrieved projects:', projects);
+        res.json(projects);
+    } catch (error) {
+        console.error('Error in /projects route:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status
+        });
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.message || 'Failed to fetch projects',
+            details: error.response?.data || error.message
+        });
+    }
 });
 
-// Get files for a specific project
+// Get project files
 router.get('/projects/:projectId/files', auth, async (req, res) => {
-  try {
-    const files = await forgeService.getProjectFiles(req.params.projectId);
-    res.json(files);
-  } catch (error) {
-    console.error('Error in /projects/:projectId/files route:', error);
-    res.status(500).json({ error: 'Failed to fetch project files' });
-  }
+    try {
+        const files = await forgeService.getProjectFiles(req.params.projectId, req.forgeToken);
+        res.json(files);
+    } catch (error) {
+        console.error('Error in /projects/:projectId/files route:', error);
+        res.status(error.response?.status || 500).json({
+            error: 'Failed to fetch project files',
+            details: error.response?.data || error.message
+        });
+    }
 });
 
 // Get project details

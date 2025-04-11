@@ -5,10 +5,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const forgeService = require('../services/forgeService');
+const oauthService = require('../services/oauthService');
 
 // Redirect to Autodesk OAuth login page
 router.get('/login', (req, res) => {
-    const authUrl = authService.getAuthorizationUrl();
+    const authUrl = oauthService.getAuthorizationUrl();
     res.redirect(authUrl);
 });
 
@@ -17,25 +18,38 @@ router.get('/callback', async (req, res) => {
     try {
         const { code } = req.query;
         if (!code) {
-            throw new Error('Authorization code is missing');
+            return res.status(400).json({ error: 'Authorization code is required' });
         }
 
-        // Exchange code for access token
-        const tokenData = await authService.getAccessToken(code);
+        console.log('Received authorization code:', code);
+        const tokenData = await oauthService.getToken(code);
+        console.log('Token data received:', tokenData);
         
-        // Get user profile
-        const userProfile = await authService.getUserProfile(tokenData.access_token);
+        // Create JWT with user info
+        const userToken = jwt.sign(
+            { 
+                access_token: tokenData.access_token,
+                refresh_token: tokenData.refresh_token,
+                expires_at: Date.now() + (tokenData.expires_in * 1000)
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
 
-        // Store session data
-        req.session.accessToken = tokenData.access_token;
-        req.session.refreshToken = tokenData.refresh_token;
-        req.session.user = userProfile;
-
-        // Redirect to the main application
-        res.redirect('http://localhost:3000');
+        // Redirect to frontend with token
+        res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${userToken}`);
     } catch (error) {
-        console.error('Authentication error:', error);
-        res.status(500).json({ error: 'Authentication failed' });
+        console.error('Auth callback error:', error);
+        console.error('Error details:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status
+        });
+        res.status(500).json({ 
+            error: 'Authentication failed',
+            details: error.message,
+            response: error.response?.data
+        });
     }
 });
 
@@ -142,6 +156,22 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Refresh token endpoint
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'Refresh token is required' });
+    }
+
+    const tokens = await oauthService.refreshToken(refresh_token);
+    res.json(tokens);
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh token' });
   }
 });
 
