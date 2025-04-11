@@ -22,20 +22,21 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Connect to MongoDB
-const mongoURI = process.env.MONGODB_URI;
-if (!mongoURI) {
-  console.error('MONGODB_URI is not defined in .env file');
-  process.exit(1);
-}
+// const mongoURI = process.env.MONGODB_URI;
+// if (!mongoURI) {
+//   console.error('MONGODB_URI is not defined in .env file');
+//   process.exit(1);
+// }
 
-mongoose.connect(mongoURI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
+// mongoose.connect(mongoURI)
+//   .then(() => console.log('Connected to MongoDB'))
+//   .catch(err => {
+//     console.error('MongoDB connection error:', err);
+//     process.exit(1);
+//   });
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -43,8 +44,15 @@ app.use('/api/acc', accRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  console.error('Global error handler:', {
+    message: err.message,
+    stack: err.stack,
+    name: err.name
+  });
+  res.status(500).json({ 
+    error: 'Something went wrong!',
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // Serve static files in production

@@ -16,6 +16,7 @@ class OAuthService {
   }
 
   getAuthorizationUrl() {
+    console.log('OAuthService: Generating authorization URL');
     const params = new URLSearchParams({
       client_id: this.clientId,
       response_type: 'code',
@@ -23,12 +24,16 @@ class OAuthService {
       scope: 'data:read data:write data:create bucket:read viewables:read account:read'
     });
 
-    return `${this.baseUrl}/authentication/v2/authorize?${params.toString()}`;
+    const authUrl = `${this.baseUrl}/authentication/v2/authorize?${params.toString()}`;
+    console.log('OAuthService: Generated auth URL:', authUrl);
+    return authUrl;
   }
 
   async getToken(code) {
     try {
-      console.log('Getting token with code:', code);
+      console.log('OAuthService: Getting token with code:', code);
+      console.log('OAuthService: Using callback URL:', this.callbackUrl);
+      
       const authHeader = `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`;
       
       const requestBody = querystring.stringify({
@@ -37,7 +42,7 @@ class OAuthService {
         redirect_uri: this.callbackUrl
       });
 
-      console.log('Making token request with:', {
+      console.log('OAuthService: Making token request with:', {
         url: `${this.baseUrl}/authentication/v2/token`,
         headers: {
           'Authorization': 'Basic [REDACTED]',
@@ -57,14 +62,21 @@ class OAuthService {
         }
       );
 
-      console.log('Token response:', response.data);
+      console.log('OAuthService: Token response:', {
+        hasAccessToken: !!response.data.access_token,
+        hasRefreshToken: !!response.data.refresh_token,
+        expiresIn: response.data.expires_in,
+        status: response.status,
+        statusText: response.statusText
+      });
       return response.data;
     } catch (error) {
-      console.error('Error getting token:', {
+      console.error('OAuthService: Error getting token:', {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
-        headers: error.response?.headers
+        headers: error.response?.headers,
+        stack: error.stack
       });
       throw error;
     }
@@ -72,7 +84,7 @@ class OAuthService {
 
   async refreshToken(refreshToken) {
     try {
-      console.log('Refreshing token with:', refreshToken);
+      console.log('OAuthService: Refreshing token');
       const authHeader = `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`;
       
       const response = await axios.post(
@@ -90,7 +102,7 @@ class OAuthService {
       );
       return response.data;
     } catch (error) {
-      console.error('Error refreshing token:', error.response?.data || error.message);
+      console.error('OAuthService: Error refreshing token:', error.response?.data || error.message);
       throw error;
     }
   }

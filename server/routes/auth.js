@@ -7,23 +7,80 @@ const User = require('../models/User');
 const forgeService = require('../services/forgeService');
 const oauthService = require('../services/oauthService');
 
+// Verify session token
+router.get('/session', async (req, res) => {
+    try {
+        console.log('Auth: Verifying session token');
+        const authHeader = req.headers.authorization;
+        console.log('Auth: Auth header present:', !!authHeader);
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            console.error('Auth: No or invalid authorization header');
+            return res.status(401).json({ isAuthenticated: false });
+        }
+
+        const token = authHeader.split(' ')[1];
+        console.log('Auth: Token extracted from header');
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('Auth: Token verified successfully');
+        console.log('Auth: Decoded token:', {
+            hasAccessToken: !!decoded.access_token,
+            expiresAt: decoded.expires_at
+        });
+
+        if (!decoded || !decoded.access_token) {
+            console.error('Auth: Invalid token structure');
+            return res.status(401).json({ isAuthenticated: false });
+        }
+
+        // Check if token is expired
+        if (decoded.expires_at < Date.now()) {
+            console.error('Auth: Token expired');
+            return res.status(401).json({ isAuthenticated: false });
+        }
+
+        console.log('Auth: Session valid');
+        res.json({ isAuthenticated: true });
+    } catch (error) {
+        console.error('Auth: Session verification error:', {
+            message: error.message,
+            name: error.name,
+            stack: error.stack
+        });
+        res.status(401).json({ isAuthenticated: false });
+    }
+});
+
 // Redirect to Autodesk OAuth login page
 router.get('/login', (req, res) => {
+    console.log('Auth: Redirecting to Autodesk login');
     const authUrl = oauthService.getAuthorizationUrl();
+    console.log('Auth: Generated auth URL:', authUrl);
     res.redirect(authUrl);
 });
 
 // Handle OAuth callback
 router.get('/callback', async (req, res) => {
     try {
+        console.log('Auth: Received callback request');
+        console.log('Auth: Request URL:', req.url);
+        console.log('Auth: Query params:', req.query);
+        console.log('Auth: Headers:', req.headers);
+        
         const { code } = req.query;
         if (!code) {
+            console.error('Auth: No authorization code received');
             return res.status(400).json({ error: 'Authorization code is required' });
         }
 
-        console.log('Received authorization code:', code);
+        console.log('Auth: Received authorization code');
         const tokenData = await oauthService.getToken(code);
-        console.log('Token data received:', tokenData);
+        console.log('Auth: Received token data:', {
+            hasAccessToken: !!tokenData.access_token,
+            hasRefreshToken: !!tokenData.refresh_token,
+            expiresIn: tokenData.expires_in
+        });
         
         // Create JWT with user info
         const userToken = jwt.sign(
@@ -36,37 +93,17 @@ router.get('/callback', async (req, res) => {
             { expiresIn: '1h' }
         );
 
-        // Redirect to frontend with token
-        res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${userToken}`);
+        console.log('Auth: Created JWT token');
+        res.json({ token: userToken });
     } catch (error) {
-        console.error('Auth callback error:', error);
-        console.error('Error details:', {
+        console.error('Auth: Callback error:', {
             message: error.message,
             response: error.response?.data,
-            status: error.response?.status
+            status: error.response?.status,
+            stack: error.stack
         });
-        res.status(500).json({ 
-            error: 'Authentication failed',
-            details: error.message,
-            response: error.response?.data
-        });
+        res.status(500).json({ error: 'Authentication failed' });
     }
-});
-
-// Session check route
-router.get('/session', (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ isAuthenticated: false });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    res.json({ isAuthenticated: true, user: decoded.user });
-  } catch (err) {
-    res.status(401).json({ isAuthenticated: false });
-  }
 });
 
 // Logout
@@ -172,6 +209,66 @@ router.post('/refresh', async (req, res) => {
   } catch (error) {
     console.error('Token refresh error:', error);
     res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
+// Handle OAuth callback
+router.post('/callback', async (req, res) => {
+  try {
+    console.log('Auth route: Received callback request');
+    console.log('Auth route: Request body:', req.body);
+    console.log('Auth route: Request headers:', req.headers);
+    
+    const { code } = req.body;
+    console.log('Auth route: Received authorization code:', code ? 'present' : 'missing');
+
+    if (!code) {
+      console.error('Auth route: No authorization code provided');
+      return res.status(400).json({ error: 'Authorization code is required' });
+    }
+
+    console.log('Auth route: Exchanging code for token...');
+    console.log('Auth route: Environment variables:', {
+      APS_CLIENT_ID: process.env.APS_CLIENT_ID ? 'present' : 'missing',
+      APS_CLIENT_SECRET: process.env.APS_CLIENT_SECRET ? 'present' : 'missing',
+      APS_CALLBACK_URL: process.env.APS_CALLBACK_URL ? 'present' : 'missing',
+      JWT_SECRET: process.env.JWT_SECRET ? 'present' : 'missing'
+    });
+
+    const tokenData = await forgeService.exchangeCodeForToken(code);
+    console.log('Auth route: Successfully obtained token data:', {
+      hasAccessToken: !!tokenData.access_token,
+      hasRefreshToken: !!tokenData.refresh_token,
+      expiresIn: tokenData.expires_in
+    });
+
+    // Create a JWT token with the Forge token data
+    const tokenPayload = { 
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: Date.now() + (tokenData.expires_in * 1000)
+    };
+    console.log('Auth route: Creating JWT with payload:', tokenPayload);
+
+    const token = jwt.sign(
+      tokenPayload,
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    console.log('Auth route: Generated JWT token successfully');
+    res.json({ token });
+  } catch (error) {
+    console.error('Auth route: Error in callback:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to exchange authorization code',
+      details: error.response?.data || error.message
+    });
   }
 });
 

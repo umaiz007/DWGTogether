@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, List, ListItem, ListItemText, Button, CircularProgress } from '@mui/material';
+import { Box, Button, List, ListItem, ListItemText, Typography, CircularProgress } from '@mui/material';
 import axios from 'axios';
-import { jwtDecode } from 'jwt-decode';
 
 const ACCDashboard = () => {
     const [projects, setProjects] = useState([]);
@@ -12,50 +11,68 @@ const ACCDashboard = () => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     useEffect(() => {
-        // Check if we have a token in localStorage
-        const storedToken = localStorage.getItem('acc_token');
-        if (storedToken) {
+        console.log('ACCDashboard: Component mounted');
+        console.log('ACCDashboard: API URL:', process.env.REACT_APP_API_URL || 'http://localhost:5001');
+
+        const checkAuth = async () => {
             try {
-                // Decode the JWT to get the Forge access token
-                const decoded = jwtDecode(storedToken);
-                if (decoded && decoded.access_token) {
-                    setIsAuthenticated(true);
-                    fetchProjects(decoded.access_token);
+                const token = localStorage.getItem('token');
+                console.log('ACCDashboard: Checking authentication');
+                console.log('ACCDashboard: Token in localStorage:', !!token);
+
+                if (token) {
+                    console.log('ACCDashboard: Token found, verifying...');
+                    const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/auth/session`, {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+
+                    if (response.data.isAuthenticated) {
+                        console.log('ACCDashboard: User authenticated');
+                        setIsAuthenticated(true);
+                        fetchProjects();
+                    } else {
+                        console.log('ACCDashboard: Session invalid');
+                        localStorage.removeItem('token');
+                        setIsAuthenticated(false);
+                    }
                 } else {
-                    // Token is invalid or doesn't contain access_token
-                    localStorage.removeItem('acc_token');
+                    console.log('ACCDashboard: No token found');
                     setIsAuthenticated(false);
                 }
             } catch (error) {
-                console.error('Error decoding token:', error);
-                localStorage.removeItem('acc_token');
+                console.error('ACCDashboard: Auth check failed:', error);
+                localStorage.removeItem('token');
                 setIsAuthenticated(false);
             }
-        }
+        };
+
+        checkAuth();
     }, []);
 
     const handleLogin = () => {
-        window.location.href = 'http://localhost:5001/api/auth/login';
+        window.location.href = `${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/auth/login`;
     };
 
-    const fetchProjects = async (accessToken) => {
+    const fetchProjects = async () => {
         try {
             setLoading(true);
             setError(null);
-            const response = await axios.get('http://localhost:5001/api/acc/projects', {
+            const token = localStorage.getItem('token');
+            console.log('ACCDashboard: Fetching projects with token:', !!token);
+
+            const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/acc/projects`, {
                 headers: {
-                    Authorization: `Bearer ${accessToken}`
+                    Authorization: `Bearer ${token}`
                 }
             });
+
+            console.log('ACCDashboard: Projects response:', response.data);
             setProjects(response.data);
         } catch (error) {
-            console.error('Error fetching projects:', error);
-            setError('Failed to fetch projects. Please try logging in again.');
-            if (error.response?.status === 401) {
-                // Token expired or invalid
-                localStorage.removeItem('acc_token');
-                setIsAuthenticated(false);
-            }
+            console.error('ACCDashboard: Error fetching projects:', error);
+            setError('Failed to fetch projects');
         } finally {
             setLoading(false);
         }
@@ -63,67 +80,52 @@ const ACCDashboard = () => {
 
     const fetchProjectFiles = async (projectId) => {
         try {
-            const storedToken = localStorage.getItem('acc_token');
-            if (!storedToken) {
-                setError('Not authenticated');
-                return;
-            }
-
-            const decoded = jwtDecode(storedToken);
-            if (!decoded || !decoded.access_token) {
-                setError('Invalid token');
-                return;
-            }
-
             setLoading(true);
             setError(null);
-            const response = await axios.get(`http://localhost:5001/api/acc/projects/${projectId}/files`, {
-                headers: {
-                    Authorization: `Bearer ${decoded.access_token}`
+            const token = localStorage.getItem('token');
+            console.log('ACCDashboard: Fetching files for project:', projectId);
+
+            const response = await axios.get(
+                `${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/acc/projects/${projectId}/files`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
                 }
-            });
+            );
+
+            console.log('ACCDashboard: Files response:', response.data);
             setFiles(response.data);
         } catch (error) {
-            console.error('Error fetching project files:', error);
+            console.error('ACCDashboard: Error fetching files:', error);
             setError('Failed to fetch project files');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleProjectSelect = (project) => {
-        setSelectedProject(project);
-        fetchProjectFiles(project.id);
-    };
-
     if (!isAuthenticated) {
+        console.log('ACCDashboard: User not authenticated, showing login button');
         return (
-            <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography variant="h5" gutterBottom>
-                    Please log in to access ACC projects
-                </Typography>
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
                 <Button variant="contained" color="primary" onClick={handleLogin}>
-                    Log in with Autodesk
+                    Login with Autodesk
                 </Button>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ p: 3 }}>
+        <Box p={3}>
             <Typography variant="h4" gutterBottom>
                 ACC Projects
             </Typography>
 
             {loading && <CircularProgress />}
-            {error && (
-                <Typography color="error" gutterBottom>
-                    {error}
-                </Typography>
-            )}
+            {error && <Typography color="error">{error}</Typography>}
 
-            <Box sx={{ display: 'flex', gap: 4 }}>
-                <Box sx={{ flex: 1 }}>
+            <Box display="flex" gap={2}>
+                <Box flex={1}>
                     <Typography variant="h6" gutterBottom>
                         Projects
                     </Typography>
@@ -132,29 +134,26 @@ const ACCDashboard = () => {
                             <ListItem
                                 key={project.id}
                                 button
-                                onClick={() => handleProjectSelect(project)}
+                                onClick={() => {
+                                    setSelectedProject(project);
+                                    fetchProjectFiles(project.id);
+                                }}
                                 selected={selectedProject?.id === project.id}
                             >
-                                <ListItemText
-                                    primary={project.name}
-                                    secondary={project.description}
-                                />
+                                <ListItemText primary={project.name} secondary={project.id} />
                             </ListItem>
                         ))}
                     </List>
                 </Box>
 
-                <Box sx={{ flex: 1 }}>
+                <Box flex={1}>
                     <Typography variant="h6" gutterBottom>
                         Files
                     </Typography>
                     <List>
                         {files.map((file) => (
                             <ListItem key={file.id}>
-                                <ListItemText
-                                    primary={file.name}
-                                    secondary={file.type}
-                                />
+                                <ListItemText primary={file.name} secondary={file.type} />
                             </ListItem>
                         ))}
                     </List>
