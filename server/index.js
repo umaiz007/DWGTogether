@@ -63,8 +63,20 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
+const PORT = 5001;
+server.listen(PORT, '0.0.0.0', (err) => {
+  if (err) {
+    console.error('Server startup error:', err);
+    return;
+  }
   console.log(`Server running on port ${PORT}`);
   console.log('Environment:', process.env.NODE_ENV || 'development');
-}); 
+});
+
+// Additional error handling
+server.on('error', (err) => {
+  console.error('Server error:', err);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  }
+});

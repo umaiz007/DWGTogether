@@ -52,7 +52,7 @@ const ACCDashboard = () => {
     }, []);
 
     const handleLogin = () => {
-        window.location.href = `${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/auth/login`;
+        window.location.href = `${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/auth/login`;
     };
 
     const fetchProjects = async () => {
